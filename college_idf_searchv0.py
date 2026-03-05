@@ -9,35 +9,60 @@ st.set_page_config(page_title="法国中学智能选择系统", layout="wide")
 @st.cache_data
 def load_data(target_file):
     try:
-        # 显式读取指定的文件名
+        # 1. 读取 Excel，强制不限制列数
         df = pd.read_excel(target_file, engine='openpyxl')
         
-        # 清洗列名：去除看不见的空格或换行符
-        df.columns = [str(c).strip() for c in df.columns]
+        # 2. 深度清洗列名：去除空格、换行符、统一单引号格式
+        df.columns = [
+            str(c).strip().replace('\n', '').replace("’", "'") 
+            for c in df.columns
+        ]
         
-        # IPS 数据处理：将法国格式的逗号转为点号并转为数字
-        if 'IPS' in df.columns:
-            df['IPS'] = pd.to_numeric(df['IPS'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        
-        # 必须包含的经纬度列名检查
-        req_cols = ['Latitude WGS84', 'Longitude WGS84']
-        for col in req_cols:
-            if col not in df.columns:
-                st.error(f"❌ 错误：Excel 中找不到列名 '{col}'。目前有的列名是：{df.columns.tolist()}")
-                return None
-        
-        # 删除经纬度为空的行
-        df = df.dropna(subset=req_cols)
-        
-        # 填充语言列空值
-        if 'Langues' in df.columns:
-            df['Langues'] = df['Langues'].fillna('Non spécifié')
-            
+        # 调试辅助：在页面上列出所有读到的列，看看 IPS 和 Position 在不在
+        # st.write("✅ 成功读取到的所有列名：", df.columns.tolist())
+
+        # 3. 智能定位关键列（模糊匹配）
+        def find_col(keywords):
+            for col in df.columns:
+                if any(k in col for k in keywords):
+                    return col
+            return None
+
+        # 自动寻找对应的列名
+        pos_col = find_col(['Position', 'Coordinate'])
+        ips_col = find_col(['IPS'])
+        secteur_col = find_col(['Secteur'])
+        lang_col = find_col(['Langues', 'Language'])
+
+        # 4. 处理坐标 (Position)
+        if pos_col:
+            # 兼容处理：有些 Position 可能是 "(48.8, 2.3)" 这种带括号的
+            clean_pos = df[pos_col].astype(str).str.replace('(', '').str.replace(')', '')
+            coords = clean_pos.str.split(',', expand=True)
+            df['lat'] = pd.to_numeric(coords[0], errors='coerce')
+            df['lon'] = pd.to_numeric(coords[1], errors='coerce')
+        else:
+            st.error(f"❌ 找不到坐标列，请检查是否有 'Position' 列。当前列：{df.columns.tolist()}")
+            return None
+
+        # 5. 处理 IPS
+        if ips_col:
+            df['IPS_val'] = pd.to_numeric(df[ips_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        else:
+            df['IPS_val'] = 0
+
+        # 6. 保存识别出的列名供后续使用
+        df['_matched_secteur'] = secteur_col
+        df['_matched_lang'] = lang_col
+
+        # 清理无效坐标行
+        df = df.dropna(subset=['lat', 'lon'])
         return df
     except Exception as e:
-        st.error(f"❌ 无法读取文件 '{target_file}': {e}")
+        st.error(f"❌ 读取失败: {e}")
         return None
-
+        
+        
 # --- 3. 设置文件名 (确保这里完全匹配) ---
 FILE_NAME = "fr-en-college-idf-language.xlsx"
 
@@ -128,6 +153,7 @@ if df_raw is not None:
         st.download_button("📥 下载结果 (CSV)", csv, "search_results.csv", "text/csv")
 else:
     st.error(f"⚠️ 在根目录下未找到文件: {FILE_NAME}")
+
 
 
 
