@@ -10,7 +10,7 @@ st.set_page_config(page_title="法国中学智能选择系统", layout="wide")
 def load_data(file_path):
     try:
         # 读取指定的 Excel 文件
-        df = pd.read_excel("fr-en-offre-languages-2d.xlsx")
+        df = pd.read_excel("fr-en-college-idf-language.xlsx")
         
         # 1. 转换 IPS 为数字，处理可能的非法字符（如逗号）
         if 'IPS' in df.columns:
@@ -117,4 +117,5 @@ if df_raw is not None:
         st.download_button("📥 下载结果", csv, "results.csv", "text/csv")
 else:
     st.warning(f"请确保文件 '{data_file}' 位于程序相同目录下。")
+
 
